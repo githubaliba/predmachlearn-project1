@@ -1,0 +1,128 @@
+---
+title: "Practical Machine Learning Project"
+author: "githubaliba"
+date: "Sunday, November 23, 2014"
+output: html_document
+---
+
+# Practical Machine Learning : Peer Assessment
+
+Assignment:
+The goal of your project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases. 
+
+The first thing we will do is set the seed to ensure reproducible results.
+```{r}
+set.seed(2112)
+```
+
+Next, we will create the data directory and download the data files as needed.  We will also load the raw "trainData" data frame and get a quick summary of it.
+
+```{r}
+dataDir <- "./data"
+if(!file.exists(dataDir)) {dir.create(dataDir)}
+trainFile.url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+trainFile.name <- "pml-training.csv"
+trainFile.dpath <- paste(dataDir,"/",trainFile.name,sep="")
+download.file(trainFile.url,destfile=trainFile.dpath,method="curl")
+testFile.url <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+testFile.name <- "pml-testing.csv"
+testFile.dpath <- paste(dataDir,"/",testFile.name,sep="")
+download.file(testFile.url,destfile=testFile.dpath,method="curl")
+
+trainData <- read.csv(trainFile.dpath)
+#summary(trainData)
+```
+
+The summary for this raw data has many NAs and other bad values.  There are a variety of ways to address this.  First we will use the nearZeroVar function from the CARET package to remove values that have no variance.  Then, after further inspection, it would appear that there are a variety of summary values (min, max, var, stddev, etc) that have large number of NAs and that we can exclude as the information is already captured in the raw data.  Reviewing the summaries as we trim out the variables shows we have a much cleaner and more information dense data set to work with.
+
+
+```{r}
+library(caret)
+zeroCols <- nearZeroVar(trainData)
+clipData <- trainData[, -zeroCols]
+#summary(clipData)
+
+trimData <- clipData[ , -grep("max_",names(clipData))]
+trimData <- trimData[ , -grep("min_",names(trimData))]
+trimData <- trimData[ , -grep("var_",names(trimData))]
+trimData <- trimData[ , -grep("amplitude_",names(trimData))]
+trimData <- trimData[ , -grep("stddev_",names(trimData))]
+trimData <- trimData[ , -grep("avg_",names(trimData))]
+#summary(trimData)
+```
+
+The next thing to do is to subset this cleaned up data into training and test data that we set aside for final validation.
+
+```{r}
+inTrain <- createDataPartition(y=trimData$classe, p=0.7, list=FALSE) 
+trainSet <- trimData[inTrain,-c(1:6)]
+testSet <- trimData[-inTrain,-c(1:6)]
+```
+
+Before diving in and working with this full data set, however, it seemed more prudent and time-sensitive to work with some models based on an experimental subset of data.  I shave off a random section of the data to work with here.
+
+```{r}
+exSet1 <- trainSet[sample(1:nrow(trainSet), 1000,replace=FALSE),]
+inTrainEx1 <- createDataPartition(y=exSet1$classe, p=0.7, list=FALSE) 
+trainEx1 <- exSet1[inTrainEx1,]
+testEx1 <- exSet1[-inTrainEx1,]
+```
+
+First, I take a look at a quick rpart / classification tree.
+
+```{r}
+exSet1Modelrpart <- train(classe ~., method="rpart",data=trainEx1)
+print(exSet1Modelrpart$finalModel)
+library(rattle)
+fancyRpartPlot(exSet1Modelrpart$finalModel)
+```
+
+This is a nice quick way to review the information, but it seems as if there is insufficient accuracy here.  In some variants of this, not all classifications are represented!  Let us try a random forest approach instead.
+
+
+```{r}
+library(randomForest)
+exSet1Modelrf <- randomForest(classe~.,data=trainEx1)
+exSet1Modelrf
+```
+
+This version of the random forest predicts an error rate of 9.54%.  This may not be ideal, but let us take a look with the full data set which may help us cut down on the variance.
+
+
+```{r}
+modelRf <- randomForest(classe~.,data=trainSet)
+modelRf
+```
+
+The expected error rate is way down and the confusion matrix looks much better.  Let's see how well it performs against the test data.
+
+```{r} 
+pred <- predict(modelRf,testSet)
+testSet$predRight <- pred == testSet$classe
+table(pred,testSet$classe)
+```
+
+This shows a consistent degree of accuracy in the confusion matrix, and this is ultimately the model I used to submit below.
+
+##APPENDIX - submitting files
+
+```{r} 
+testData <- read.csv(testFile.dpath)
+submitPredictionsModelRf <- predict(modelRf,testData)
+submitPredictionsModelRf
+
+answersDir <- "./answers"
+if(!file.exists(answersDir)) {dir.create(answersDir)}
+
+pml_write_files = function(x,y){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste(y,"/problem_id_",i,".txt",sep="")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(submitPredictionsModelRf,answersDir)
+```
+
+These files received 20/20 correct.
