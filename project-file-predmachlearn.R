@@ -57,15 +57,19 @@ testData <- read.csv(testFile.dpath)
 submitPredictionsModelRf <- predict(modelRf,testData)
 submitPredictionsModelRf
 
-pml_write_files = function(x){
+
+answersDir <- "./answers"
+if(!file.exists(answersDir)) {dir.create(answersDir)}
+
+pml_write_files = function(x,y){
   n = length(x)
   for(i in 1:n){
-    filename = paste0("problem_id_",i,".txt")
+    filename = paste(y,"/problem_id_",i,".txt",sep="")
     write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
   }
 }
 
-pml_write_files(submitPredictionsModelRf)
+pml_write_files(submitPredictionsModelRf,answersDir)
 
 
 
